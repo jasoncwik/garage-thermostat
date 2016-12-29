@@ -1,3 +1,5 @@
+import java.util.Date
+
 import MasterControlProgram.Update
 import akka.actor.{Actor, Props}
 import akka.event.Logging
@@ -73,7 +75,12 @@ class MasterControlProgram extends Actor {
     // Evaluate heat call
 
     // Update display
-
+    lcdDisplay ! I2cSerialDisplay.Message(new Date().toString, I2cSerialDisplay.LCD_LINE_1)
+    if(doorOpen) {
+      lcdDisplay ! I2cSerialDisplay.Message("Door Open", I2cSerialDisplay.LCD_LINE_2)
+    } else {
+      lcdDisplay ! I2cSerialDisplay.Message("Door Closed", I2cSerialDisplay.LCD_LINE_2)
+    }
   }
 
   override def receive: Receive = {
@@ -81,6 +88,7 @@ class MasterControlProgram extends Actor {
       if(doorSensor.eq(from)) {
         doorOpen = !state;
         log.info("Garage door is open? " + doorOpen)
+
       }
     }
     case Update => doUpdate

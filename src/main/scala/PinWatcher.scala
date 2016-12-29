@@ -28,6 +28,7 @@ class PinWatcher(controller:GpioController, pin:Pin, notify:ActorRef) extends Ac
   }
 
   override def handleGpioPinDigitalStateChangeEvent(event: GpioPinDigitalStateChangeEvent): Unit = {
-    
+    log.info(String.format("Pin %s changed state: %s", input.getPin, event.getState))
+    notify ! PinWatcher.PinNotify(event.getState.isHigh, self)
   }
 }
