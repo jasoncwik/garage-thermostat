@@ -1,7 +1,5 @@
 import akka.actor.ActorSystem
-import com.pi4j.io.gpio.{GpioFactory, RaspiPin}
-import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
+import com.typesafe.config.ConfigFactory
 
 /**
   * Entrypoint.  Init actors and startup system.
@@ -10,12 +8,18 @@ object Main {
   def main(args: Array[String]): Unit = {
     println("Hello, world!")
 
-    val controller = GpioFactory.getInstance()
-    val system = ActorSystem("mySystem")
-    val heartbeatLED = system.actorOf(LedActor.props(controller, RaspiPin.GPIO_06), "led1")
+    val config = ConfigFactory.load()
 
-    // Toggle the LED every second while the app is running
-    system.scheduler.schedule(0 seconds, 1 second, heartbeatLED, LedActor.Toggle)
+    // In test mode, we will simulate everything in absence of GPIO hardware on the rPI
+    var test = false;
+    if(args.length > 0 && "test".equals(args(0))) {
+      test = true;
+    }
+
+    val system = ActorSystem("mySystem", config)
+
+    val mcp = system.actorOf(MasterControlProgram.props(), "MCP")
+
     while(true) {
 
       Thread.sleep(100L)

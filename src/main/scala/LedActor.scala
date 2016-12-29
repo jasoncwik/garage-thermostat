@@ -33,7 +33,7 @@ class LedActor(controller: GpioController, pin: Pin) extends Actor {
   private val led = controller.provisionDigitalOutputPin(pin)
   led.setState(ledState)
 
-  def receive: PartialFunction[Any, Unit] = {
+  def receive: Receive = {
     case x:Boolean => ledState = x; led.setState(x); log.info("Set pin state to " + ledState)
     case Toggle => ledState = !ledState; led.setState(ledState); log.info("Toggled pin state.  New state " + ledState)
     case _      => log.info("received unknown message")
