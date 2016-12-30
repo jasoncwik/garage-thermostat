@@ -96,13 +96,17 @@ class I2cSerialDisplay(busId:Int, address:Byte) extends Actor {
       log.warning("Truncating string: " + message);
       text = message.substring(0, I2cSerialDisplay.LCD_WIDTH)
     }
+
+    // Pad out to width to overwrite any existing text
+    text = text.padTo(I2cSerialDisplay.LCD_WIDTH, ' ')
+
     lcd_byte(line, I2cSerialDisplay.LCD_CMD)
 
     // Convert to ASCII
     val bytes = text.getBytes(StandardCharsets.US_ASCII)
 
     bytes.foreach( f => {
-      log.info("Sending serial: " + f)
+      //log.info("Sending serial: " + f)
       lcd_byte(f, I2cSerialDisplay.LCD_CHR)
     } )
   }
