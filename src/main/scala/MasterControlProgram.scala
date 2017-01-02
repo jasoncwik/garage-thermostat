@@ -36,18 +36,19 @@ class MasterControlProgram extends Actor {
   context.system.scheduler.schedule(0 seconds, 1 second, heartbeatLED, LedActor.Toggle)
 
   // Create the display
-  val lcdDisplay = context.actorOf(I2cSerialDisplay.props(I2CBus.BUS_1, 0x3f.toByte))
+  val lcdDisplay = context.actorOf(I2cSerialDisplay.props(I2CBus.BUS_1, 0x3f.toByte), "lcdDisplay")
   log.info("Initializing LCD display")
   lcdDisplay ! I2cSerialDisplay.Message("Initializing...", I2cSerialDisplay.LCD_LINE_1)
 
   // Create a relay to control the heat call
-  val heatCall = context.actorOf(RelayActor.props(controller, RaspiPin.GPIO_04, false))
+  val heatCall = context.actorOf(RelayActor.props(controller, RaspiPin.GPIO_04, false), "heatCall")
 
   // Watch for the door open/close
-  val doorSensor = context.actorOf(PinWatcher.props(controller, RaspiPin.GPIO_05, self))
+  val doorSensor = context.actorOf(PinWatcher.props(controller, RaspiPin.GPIO_05, self), "doorSensor")
   doorSensor ! PinWatcher.Watch
 
   // Temp sensor
+  val tempPressSensor = context.actorOf(Bmp180.props(I2CBus.BUS_1), "bmp180")
 
   // Motion sensor
 
@@ -85,6 +86,10 @@ class MasterControlProgram extends Actor {
     } else {
       lcdDisplay ! I2cSerialDisplay.Message("Door Closed", I2cSerialDisplay.LCD_LINE_2)
     }
+
+    // Toggle heatCall every 10s for now.
+    val heatState = ((System.currentTimeMillis() / 6000L) % 2) == 0
+    heatCall ! heatState
   }
 
   override def receive: Receive = {
