@@ -49,6 +49,8 @@ class MasterControlProgram extends Actor {
 
   // Temp sensor
   val tempPressSensor = context.actorOf(Bmp180.props(I2CBus.BUS_1), "bmp180")
+  tempPressSensor ! Bmp180.Initialize
+  context.system.scheduler.schedule(5 seconds, 5 seconds, tempPressSensor, Bmp180.CollectSample(self))
 
   // Motion sensor
 
