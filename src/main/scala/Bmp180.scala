@@ -26,8 +26,6 @@ object Bmp180 {
   val REG_MD = 0xBE
 
   val CHIP_ID = 0x55
-  val START_PRESSURE_STANDARD = 0x74.toByte // 2x oversampling for pressure
-  val START_TEMP_STANDARD = 0x2E.toByte
   val SCO_MASK = 0x20 // Wait for this bit to clear before reading samples
 
   /**
@@ -44,27 +42,31 @@ object Bmp180 {
 }
 
 class Bmp180(busId:Int, address:Byte) extends Actor {
-  val log = Logging(context.system, this)
+  private val oss = 3
+  private val cmdStartPressure = (0x34 + (oss << 6)).toByte
+  private val cmdStartTemp = 0x2E.toByte
 
-  val bus: I2CBus = I2CFactory.getInstance(busId)
-  val device = bus.getDevice(address)
+  private val log = Logging(context.system, this)
+
+  private val bus: I2CBus = I2CFactory.getInstance(busId)
+  private val device = bus.getDevice(address)
 
   // Calibration parameters
-  var ac1 = 0.toShort
-  var ac2 = 0.toShort
-  var ac3 = 0.toShort
+  private var ac1 = 0.toShort
+  private var ac2 = 0.toShort
+  private var ac3 = 0.toShort
   // AC4-6 are 16-bit unsigned so keep them as Int to keep positive
-  var ac4 = 0
-  var ac5 = 0
-  var ac6 = 0
-  var b1 = 0.toShort
-  var b2 = 0.toShort
-  var mb = 0.toShort
-  var mc = 0.toShort
-  var md = 0.toShort
+  private var ac4 = 0
+  private var ac5 = 0
+  private var ac6 = 0
+  private var b1 = 0.toShort
+  private var b2 = 0.toShort
+  private var mb = 0.toShort
+  private var mc = 0.toShort
+  private var md = 0.toShort
 
   // Probe to make sure it's the right chip
-  val readChipId = device.read(Bmp180.REG_CHIP_ID)
+  private val readChipId = device.read(Bmp180.REG_CHIP_ID)
   if(readChipId != Bmp180.CHIP_ID) {
     throw new RuntimeException(f"Could not detect BMP180 expected chip ID 0x${Bmp180.CHIP_ID}%x but got $readChipId%x")
   }
@@ -114,14 +116,13 @@ class Bmp180(busId:Int, address:Byte) extends Actor {
     log.info(f"Temp calcs: x1:$x1%d x2:$x2%d b5:$b5%d t:$t%d tf:$tf%.1f")
 
     // Compensated pressure
-    val oss = 1 // Standard mode.
     val b6 = b5 - 4000
     x1 = (b2 * (b6 * b6 / 4096)) / 2048
     x2 = ac2 * b6 / 2048
     var x3 = x1 + x2
     val b3 = (((ac1 * 4 + x3) << oss) + 2) / 4
 
-    log.info(f"p1 calcs: b6:$b6%d x1:$x1%d x2:$x2%d x3:$x3%d b3:$b3%d")
+    log.info(f"p1 calcs: oss:$oss%d b6:$b6%d x1:$x1%d x2:$x2%d x3:$x3%d b3:$b3%d")
 
     x1 = ac3 * b6 / 8192
     x2 = (b1 * (b6 * b6 / 4096)) / 65536
@@ -163,29 +164,44 @@ class Bmp180(busId:Int, address:Byte) extends Actor {
 
   def readUncompensatedPressure():Int = {
     // Write 0x74 to register 0xF4 to start
-    device.write(Bmp180.REG_CONTROL, Bmp180.START_PRESSURE_STANDARD)
+    device.write(Bmp180.REG_CONTROL, cmdStartPressure)
 
+    var ctlReg = 0
     do {
       // Wait 7.5ms
+      log.info("Sleeping for device to compute pressure")
       Thread.sleep(8L)
 
       // Make sure value is ready
-    } while((readShort(Bmp180.REG_CONTROL) | Bmp180.SCO_MASK) == Bmp180.SCO_MASK)
+      ctlReg = device.read(Bmp180.REG_CONTROL)
+      log.info(f"reg_ctl: 0x$ctlReg%x")
+
+    } while((ctlReg & Bmp180.SCO_MASK) == Bmp180.SCO_MASK)
 
     // Read reg 0xF6 & F7
-    return readShort(Bmp180.REG_TEMP)
+    val msb = device.read(Bmp180.REG_TEMP)
+    val lsb = device.read(Bmp180.REG_TEMP+1)
+    val xlsb = device.read(Bmp180.REG_TEMP+2)
+
+    log.info(f"msb:$msb%d (0x$msb%x) lsb:$lsb%d (0x$lsb%x) xlsb:$xlsb%d (0x$xlsb%x)")
+
+    return ((msb<<16) + (lsb<<8) + xlsb) >> (8-oss)
   }
 
   def readUncompensatedTemp():Int = {
     // Write 0x2E to register 0xF4 to start
-    device.write(Bmp180.REG_CONTROL, Bmp180.START_TEMP_STANDARD)
+    device.write(Bmp180.REG_CONTROL, cmdStartTemp)
 
+    var ctlReg = 0
     do {
+      log.info("Waiting for device to sample temp")
       // Wait 4.5ms
       Thread.sleep(5L)
 
       // Make sure value is ready
-    } while((readShort(Bmp180.REG_CONTROL) | Bmp180.SCO_MASK) == Bmp180.SCO_MASK)
+      ctlReg = device.read(Bmp180.REG_CONTROL)
+      log.info(f"reg_ctl: 0x$ctlReg%x")
+    } while((ctlReg & Bmp180.SCO_MASK) == Bmp180.SCO_MASK)
 
     // Read reg 0xF6 & F7
     return readShort(Bmp180.REG_TEMP)
