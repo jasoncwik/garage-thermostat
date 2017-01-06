@@ -53,6 +53,12 @@ class MasterControlProgram extends Actor {
   tempPressSensor ! Bmp180.Initialize
   context.system.scheduler.schedule(5 seconds, 5 seconds, tempPressSensor, Bmp180.CollectSample(self))
 
+  // Buttons for heat up/down
+  val tempUp = context.actorOf(PinWatcher.props(controller, RaspiPin.GPIO_02, self), "btnTempUp")
+  tempUp ! PinWatcher.Watch
+  val tempDown = context.actorOf(PinWatcher.props(controller, RaspiPin.GPIO_03, self), "btnTempDown")
+  tempDown ! PinWatcher.Watch
+
   // Motion sensor
 
   // IR sensor for temperature control
@@ -116,7 +122,13 @@ class MasterControlProgram extends Actor {
       if(doorSensor.eq(from)) {
         doorOpen = !state
         log.info("Garage door is open? " + doorOpen)
-
+        updateDisplay()
+      } else if(tempUp.equals(from) && state == true) { // Only trigger on rising edge
+        setpoint += 1.0
+        updateDisplay()
+      } else if(tempDown.equals(from) && state == true) {
+        setpoint -= 1.0
+        updateDisplay()
       }
     }
     case Bmp180.Sample(_, temperature, _) => currentTemp = temperature
