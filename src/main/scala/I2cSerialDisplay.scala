@@ -103,7 +103,7 @@ class I2cSerialDisplay(busId:Int, address:Byte) extends Actor {
     lcd_byte(line, I2cSerialDisplay.LCD_CMD)
 
     // Convert to ASCII
-    val bytes = text.getBytes(StandardCharsets.US_ASCII)
+    val bytes = text.getBytes(StandardCharsets.ISO_8859_1)
 
     bytes.foreach( f => {
       //log.info("Sending serial: " + f)
