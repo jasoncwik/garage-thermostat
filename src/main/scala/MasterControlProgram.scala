@@ -1,7 +1,7 @@
 import java.text.{DateFormat, SimpleDateFormat}
 import java.util.{Calendar, Date, Locale, TimeZone}
 
-import MasterControlProgram.Update
+import MasterControlProgram.{Update, UpdateDisplay}
 import akka.actor.{Actor, Props}
 import akka.event.Logging
 import com.pi4j.io.gpio.{GpioFactory, RaspiPin}
@@ -19,6 +19,7 @@ object MasterControlProgram {
   def props():Props = Props(new MasterControlProgram())
 
   case object Update
+  case object UpdateDisplay
 }
 
 class MasterControlProgram extends Actor {
@@ -59,8 +60,13 @@ class MasterControlProgram extends Actor {
   // Local state for heating logic
   var doorOpen = false
 
+  // If heat call is on
+  var heating = false
+
   // Temperature set point for heating (deg F)
   var setpoint = 50.0
+
+  var currentTemp = 50.0
 
   // Maximum difference for heating (stop at setpoint + maxDifference)
   // and don't kick in until setpoint - maxDifference (deg F)
@@ -72,37 +78,69 @@ class MasterControlProgram extends Actor {
   // Time we reached setpoint
   var setpointTime = 0L
 
-  // Ping ourselves every 5 seconds to evaluate heating logic and to update displays
+  // Ping ourselves every second to evaluate heating logic
   context.system.scheduler.schedule(5 seconds, 1 second, self, Update)
+
+  // Otherwise, update display every 5 seconds.
+  context.system.scheduler.schedule(5 seconds, 5 seconds, self, UpdateDisplay)
 
   def doUpdate():Unit = {
     // Evaluate heat call
-
-    // Update display
-    val cal = Calendar.getInstance(TimeZone.getDefault)
-    val df = DateFormat.getTimeInstance(DateFormat.MEDIUM)
-
-    lcdDisplay ! I2cSerialDisplay.Message(df.format(cal.getTime), I2cSerialDisplay.LCD_LINE_1)
-    if(doorOpen) {
-      lcdDisplay ! I2cSerialDisplay.Message("Door Open", I2cSerialDisplay.LCD_LINE_2)
+    if(heating) {
+      // turn off?
+      if(doorOpen) {
+        heating = false
+        heatCall ! heating
+        log.info("Turn heat off because door is open")
+        updateDisplay()
+      } else if(currentTemp > (setpoint+maxDifference)) {
+        heating = false
+        heatCall ! heating
+        log.info("Turn heat off because setpoint exceeded")
+        updateDisplay()
+      }
     } else {
-      lcdDisplay ! I2cSerialDisplay.Message("Door Closed", I2cSerialDisplay.LCD_LINE_2)
+      // turn on?
+      if(currentTemp < (setpoint-maxDifference) && !doorOpen) {
+        heating = true
+        heatCall ! heating
+        log.info("Turn heat on")
+        updateDisplay()
+      }
     }
 
-    // Toggle heatCall every 10s for now.
-    val heatState = ((System.currentTimeMillis() / 6000L) % 2) == 0
-    heatCall ! heatState
   }
 
   override def receive: Receive = {
     case PinWatcher.PinNotify(state, from) => {
       if(doorSensor.eq(from)) {
-        doorOpen = !state;
+        doorOpen = !state
         log.info("Garage door is open? " + doorOpen)
 
       }
     }
-    case Update => doUpdate
+    case Bmp180.Sample(_, temperature, _) => currentTemp = temperature
+    case Update => doUpdate()
+    case UpdateDisplay => updateDisplay()
     case _      => log.info("received unknown message")
+  }
+
+  private def updateDisplay():Unit = {
+    // 0123456789ABCDEF
+    // hh:mma Temp:XXºF
+    // Set:XXºF YYYYYYY    YYYY = HEAT ON or DorOPEN
+
+    val df = new SimpleDateFormat("hh:mma")
+    val time = df.format(new Date()).stripSuffix("M") // just want A/P not AM/PM
+    val deg = "\u00DF"
+    val status = if(doorOpen) "DorOPEN" else if(heating) "HEAT ON" else "IDLE"
+    val line1 = f"$time%s Temp:$currentTemp%.0f$deg%sF"
+    val line2 = f"Set:$setpoint%.0f$deg%sF $status%s"
+
+    log.info(line1)
+    log.info(line2)
+
+    lcdDisplay ! I2cSerialDisplay.Message(line1, I2cSerialDisplay.LCD_LINE_1)
+    lcdDisplay ! I2cSerialDisplay.Message(line2, I2cSerialDisplay.LCD_LINE_2)
   }
 }
