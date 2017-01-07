@@ -61,7 +61,9 @@ class MasterControlProgram extends Actor {
 
   // Motion sensor
 
-  // IR sensor for temperature control
+  // IR receiver for temperature control
+  val irReceiver = context.actorOf(IrReceiver.props(controller, RaspiPin.GPIO_00, self), "irReceiver")
+  irReceiver ! PinWatcher.Watch
 
   // Local state for heating logic
   var doorOpen = false

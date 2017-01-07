@@ -17,9 +17,9 @@ object PinWatcher {
   * Created by cwikj on 12/28/2016.
   */
 class PinWatcher(controller:GpioController, pin:Pin, notify:ActorRef) extends Actor with GpioPinListenerDigital {
-  val log = Logging(context.system, this)
+  private val log = Logging(context.system, this)
 
-  val input:GpioPinDigitalInput = controller.provisionDigitalInputPin(pin, PinPullResistance.PULL_DOWN)
+  protected val input:GpioPinDigitalInput = controller.provisionDigitalInputPin(pin, PinPullResistance.PULL_DOWN)
 
   override def receive: Receive = {
     case Watch => input.addListener(this); notify ! PinWatcher.PinNotify(input.getState.isHigh, self)
