@@ -15,7 +15,6 @@ object IrReceiver {
   case object Stop
 }
 
-class Pulse(val pulse:Long, val space:Long)
 
 class IrReceiver(controller:GpioController, pin:Pin, notify:ActorRef) extends Actor with GpioPinListenerDigital {
   private val log = Logging(context.system, this)
@@ -115,5 +114,104 @@ class IrReceiver(controller:GpioController, pin:Pin, notify:ActorRef) extends Ac
     for( x <- pulses) {
       log.info(f"Pulse: ${x.pulse}%dus Space: ${x.space}%dus")
     }
+
+    val plusMatch = PatternRecognizer.PLUS_KEY.test(pulses)
+    log.info(f"Plus key matches $plusMatch%.2f%%")
+  }
+}
+
+class Pulse(val pulse:Long, val space:Long) {
+  def matches(other:Pulse, fuzzFactor:Double): Boolean = {
+    val pulseDiff = Math.abs(other.pulse - pulse).toDouble / pulse.toDouble
+    if(pulseDiff > fuzzFactor) {
+      Console.printf("p1: %d p2: %d diff: %.2f > %.2f\n", other.pulse, pulse, pulseDiff, fuzzFactor)
+      return false
+    }
+    val spaceDiff = Math.abs(other.space - space).toDouble / space.toDouble
+    if(spaceDiff > fuzzFactor) {
+      Console.printf("s1: %d s2: %d diff: %.2f > %.2f\n", other.space, space, spaceDiff, fuzzFactor)
+      return false
+    }
+    return true
+  }
+}
+
+object PatternRecognizer {
+  val SHORT_PULSE = new Pulse(600,550)
+  val LONG_PULSE = new Pulse(600,1600)
+  val START_PULSE = new Pulse(9000,4500)
+
+  val PLUS_KEY = new PatternRecognizer(
+    START_PULSE ::
+    SHORT_PULSE ::
+    SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      LONG_PULSE ::
+      SHORT_PULSE ::
+      LONG_PULSE ::
+      SHORT_PULSE ::
+      LONG_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      LONG_PULSE ::
+      SHORT_PULSE ::
+      LONG_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      SHORT_PULSE ::
+      Nil, 2000L
+  )
+
+}
+
+class PatternRecognizer(val pulses:Seq[Pulse], val max:Long) {
+  val patternLength = pulses.length
+  val fuzzFactor = 0.2
+
+  def test(sample:Seq[Pulse]):Double = {
+    val sampleLength = sample.length
+    var fuzzyLengthMatch = false
+    if(sampleLength != patternLength) {
+      // Try to find "big" pulses that were combined?
+      fuzzyLengthMatch = true
+    }
+
+    var matches = 0
+    var j = 0
+    for(i <- 0 until patternLength) {
+      if (j < sampleLength) {
+        val p = pulses(i)
+        val s = sample(i)
+
+        if (fuzzyLengthMatch && (s.pulse > max || s.space > max)) {
+          // Probably a double entry... skip
+          j += 1
+
+        } else {
+          if (p.matches(s, fuzzFactor)) {
+            matches += 1
+          }
+        }
+      }
+
+      j += 1
+    }
+
+    return (matches * 100.0) / patternLength.toDouble
   }
 }
