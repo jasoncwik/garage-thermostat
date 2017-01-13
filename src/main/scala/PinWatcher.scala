@@ -23,7 +23,7 @@ class PinWatcher(controller:GpioController, pin:Pin, notify:ActorRef) extends Ac
 
   override def receive: Receive = {
     case Watch => input.addListener(this); notify ! PinWatcher.PinNotify(input.getState.isHigh, self)
-    case Unwatch => input.addListener(this)
+    case Unwatch => input.removeListener(this)
     case _ => log.info("received unknown message")
   }
 
