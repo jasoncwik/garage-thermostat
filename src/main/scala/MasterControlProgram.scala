@@ -4,7 +4,7 @@ import java.util.{Calendar, Date, Locale, TimeZone}
 import MasterControlProgram.{Update, UpdateDisplay}
 import akka.actor.{Actor, Props}
 import akka.event.Logging
-import com.pi4j.io.gpio.{GpioFactory, RaspiPin}
+import com.pi4j.io.gpio.{GpioFactory, PinState, RaspiPin}
 import com.pi4j.io.i2c.I2CBus
 
 import scala.concurrent.duration._
@@ -42,7 +42,7 @@ class MasterControlProgram extends Actor {
   lcdDisplay ! I2cSerialDisplay.Message("Initializing...", I2cSerialDisplay.LCD_LINE_1)
 
   // Create a relay to control the heat call
-  val heatCall = context.actorOf(RelayActor.props(controller, RaspiPin.GPIO_04, false), "heatCall")
+  val heatCall = context.actorOf(RelayActor.props(controller, RaspiPin.GPIO_04, PinState.LOW), "heatCall")
 
   // Watch for the door open/close
   val doorSensor = context.actorOf(PinWatcher.props(controller, RaspiPin.GPIO_05, self), "doorSensor")
@@ -64,6 +64,10 @@ class MasterControlProgram extends Actor {
   // IR receiver for temperature control
   val irReceiver = context.actorOf(IrReceiver.props(controller, RaspiPin.GPIO_00, self), "irReceiver")
   irReceiver ! IrReceiver.Start
+
+  // Watchdog timer in case system hangs
+  val wdTimer = context.actorOf(Props[Watchdog])
+  wdTimer ! Watchdog.Enable(15)
 
   // Local state for heating logic
   var doorOpen = false
@@ -91,6 +95,16 @@ class MasterControlProgram extends Actor {
 
   // Otherwise, update display every 5 seconds.
   context.system.scheduler.schedule(5 seconds, 5 seconds, self, UpdateDisplay)
+
+  // Shutdown hook to stop the timer
+  java.lang.Runtime.getRuntime.addShutdownHook(
+    new Thread() {
+      override def run():Unit = {
+        GpioFactory.getInstance().shutdown()
+        log.info("GPIO Shutdown")
+      }
+    }
+  )
 
   def doUpdate():Unit = {
     // Evaluate heat call
