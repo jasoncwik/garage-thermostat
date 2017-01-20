@@ -60,17 +60,23 @@ class MasterControlProgram extends Actor {
   tempDown ! PinWatcher.Watch
 
   // Motion sensor
+  val motionDetector = context.actorOf(MotionDetector.props(controller, RaspiPin.GPIO_27, self), "motionDetect")
+  motionDetector ! MotionDetector.Watch
+
 
   // IR receiver for temperature control
   val irReceiver = context.actorOf(IrReceiver.props(controller, RaspiPin.GPIO_00, self), "irReceiver")
   irReceiver ! IrReceiver.Start
 
   // Watchdog timer in case system hangs
-  val wdTimer = context.actorOf(Props[Watchdog])
+  val wdTimer = context.actorOf(Props[Watchdog], "watchdog")
   wdTimer ! Watchdog.Enable(15)
 
   // Local state for heating logic
   var doorOpen = false
+
+  // Is someone present?
+  var motionDetect = false
 
   // If heat call is on
   var heating = false
@@ -150,18 +156,19 @@ class MasterControlProgram extends Actor {
     case Bmp180.Sample(_, temperature, _) => currentTemp = temperature
     case Update => doUpdate()
     case UpdateDisplay => updateDisplay()
+    case MotionDetector.MotionDetected(state, _) => motionDetect = state
     case _      => log.info("received unknown message")
   }
 
   private def updateDisplay():Unit = {
     // 0123456789ABCDEF
     // hh:mma Temp:XXºF
-    // Set:XXºF YYYYYYY    YYYY = HEAT ON or DorOPEN
+    // Set:XXºF YYYYYYY    YYYY = HEAT ON or DOOR UP
 
     val df = new SimpleDateFormat("hh:mma")
     val time = df.format(new Date()).stripSuffix("M") // just want A/P not AM/PM
     val deg = "\u00DF"
-    val status = if(doorOpen) "DorOPEN" else if(heating) "HEAT ON" else "IDLE"
+    val status = if(doorOpen) "DOOR UP" else if(heating) "HEAT ON" else "IDLE"
     val line1 = f"$time%s Temp:$currentTemp%.0f$deg%sF"
     val line2 = f"Set:$setpoint%.0f$deg%sF $status%s"
 

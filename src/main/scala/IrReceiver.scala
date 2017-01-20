@@ -3,8 +3,9 @@ import java.util.TimerTask
 import IrReceiver.{Start, Stop}
 import akka.actor.{Actor, ActorRef, Props}
 import akka.event.Logging
-import com.pi4j.io.gpio.event.{GpioPinDigitalStateChangeEvent, GpioPinListenerDigital}
+import com.pi4j.io.gpio.event._
 import com.pi4j.io.gpio._
+import com.pi4j.wiringpi.{GpioInterrupt, GpioInterruptEvent, GpioInterruptListener}
 
 /**
   * IR Receiver / Decoder class.  Tested with VS1838B 38kHz IR Receiver chip.
@@ -16,7 +17,7 @@ object IrReceiver {
 }
 
 
-class IrReceiver(controller:GpioController, pin:Pin, notify:ActorRef) extends Actor with GpioPinListenerDigital {
+class IrReceiver(controller:GpioController, pin:Pin, notify:ActorRef) extends Actor with GpioPinListenerDigital with GpioInterruptListener {
   private val log = Logging(context.system, this)
 
   private val END_MESSAGE = 15 // Min gap between messages in ms
@@ -41,8 +42,14 @@ class IrReceiver(controller:GpioController, pin:Pin, notify:ActorRef) extends Ac
   }
 
   override def receive: Receive = {
-    case Start => input.addListener(this)
-    case Stop => input.removeListener(this)
+    case Start => {
+      GpioInterrupt.addListener(this)
+      GpioInterrupt.enablePinStateChangeCallback(pin.getAddress)
+    }
+    case Stop => {
+      GpioInterrupt.removeListener(this)
+      GpioInterrupt.disablePinStateChangeCallback(pin.getAddress)
+    }
     case _ => log.info("received unknown message")
   }
 
@@ -106,6 +113,12 @@ class IrReceiver(controller:GpioController, pin:Pin, notify:ActorRef) extends Ac
           currentState = DecodeState.WaitPos
         }
       }
+    }
+  }
+
+  def pinStateChange(event: GpioInterruptEvent): Unit = {
+    if(event.getPin == pin.getAddress) {
+      handleGpioPinDigitalStateChangeEvent(new GpioPinDigitalStateChangeEvent(this, controller.getProvisionedPin(pin), PinState.getState(event.getState)))
     }
   }
 
@@ -181,7 +194,7 @@ object PatternRecognizer {
 
 class PatternRecognizer(val pulses:Seq[Pulse], val max:Long) {
   val patternLength = pulses.length
-  val fuzzFactor = 0.2
+  val fuzzFactor = 0.3
 
   def test(sample:Seq[Pulse]):Double = {
     val sampleLength = sample.length
