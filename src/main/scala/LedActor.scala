@@ -34,7 +34,7 @@ class LedActor(controller: GpioController, pin: Pin) extends Actor {
   led.setState(ledState)
 
   def receive: Receive = {
-    case x:Boolean => ledState = x; led.setState(x); log.info("Set pin state to " + ledState)
+    case x:Boolean => ledState = x; led.setState(x); log.debug("Set pin state to " + ledState)
     case Toggle => ledState = !ledState; led.setState(ledState); //log.info("Toggled pin state.  New state " + ledState)
     case _      => log.info("received unknown message")
   }
