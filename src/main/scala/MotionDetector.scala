@@ -14,7 +14,8 @@ object MotionDetector {
   case object Watch
   case object Unwatch
   case object Tick
-  case class MotionDetected(state:Boolean, from:ActorRef)
+  case object MotionDetected
+  case class ContinuousMotion(state:Boolean, from:ActorRef)
 }
 
 /**
@@ -47,7 +48,7 @@ class MotionDetector(controller:GpioController, pin:Pin, notify:ActorRef, thresh
       if(wasMotion) {
         motionTicks += 1
         if(motionTicks >= threshold) {
-          notify ! MotionDetector.MotionDetected(true, self)
+          notify ! MotionDetector.ContinuousMotion(true, self)
           motionTicks = threshold
         }
         wasMotion = false
@@ -55,7 +56,7 @@ class MotionDetector(controller:GpioController, pin:Pin, notify:ActorRef, thresh
         if(motionTicks > 0) {
           motionTicks -= 1
           if(motionTicks == 0) {
-            notify ! MotionDetector.MotionDetected(false, self)
+            notify ! MotionDetector.ContinuousMotion(false, self)
           }
         }
       }
@@ -66,5 +67,6 @@ class MotionDetector(controller:GpioController, pin:Pin, notify:ActorRef, thresh
   override def handleGpioPinDigitalStateChangeEvent(event: GpioPinDigitalStateChangeEvent): Unit = {
     wasMotion = true
     motionLed ! event.getState.isHigh
+    if(event.getState.isHigh) notify ! MotionDetector.MotionDetected
   }
 }

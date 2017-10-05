@@ -40,12 +40,15 @@ object I2cSerialDisplay {
   // Messages
   case class Message(s:String, line:Byte)
   case object ClearDisplay
+  case object BacklightOn
+  case object BacklightOff
 }
 
 class I2cSerialDisplay(busId:Int, address:Byte) extends Actor {
   val log = Logging(context.system, this)
   val bus: I2CBus = I2CFactory.getInstance(busId)
   val device = bus.getDevice(address)
+  var backlight = I2cSerialDisplay.LCD_BACKLIGHT_OFF
 
   //  Init the display
   lcd_init()
@@ -68,8 +71,8 @@ class I2cSerialDisplay(busId:Int, address:Byte) extends Actor {
     // mode = 1 for data
     //        0 for command
 
-    val bits_high:Byte = (mode | (bits & 0xF0.toByte) | I2cSerialDisplay.LCD_BACKLIGHT_ON).toByte
-    val bits_low:Byte = (mode | ((bits << 4) & 0xF0.toByte) | I2cSerialDisplay.LCD_BACKLIGHT_ON).toByte
+    val bits_high:Byte = (mode | (bits & 0xF0.toByte) | backlight).toByte
+    val bits_low:Byte = (mode | ((bits << 4) & 0xF0.toByte) | backlight).toByte
 
     // High bits
     device.write(bits_high)
@@ -77,6 +80,7 @@ class I2cSerialDisplay(busId:Int, address:Byte) extends Actor {
 
     // Low bits
     device.write(bits_low)
+
     lcd_toggle_enable(bits_low)
   }
 
@@ -114,6 +118,9 @@ class I2cSerialDisplay(busId:Int, address:Byte) extends Actor {
   override def receive: Receive = {
     case I2cSerialDisplay.ClearDisplay => lcd_init()
     case I2cSerialDisplay.Message(s, line) => lcd_string(s, line)
+    case I2cSerialDisplay.BacklightOff => backlight = I2cSerialDisplay.LCD_BACKLIGHT_OFF
+    case I2cSerialDisplay.BacklightOn => backlight = I2cSerialDisplay.LCD_BACKLIGHT_ON
     case _      => log.info("received unknown message")
+
   }
 }
