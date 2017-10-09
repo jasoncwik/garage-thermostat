@@ -4,6 +4,8 @@ import akka.event.Logging
 import com.pi4j.io.gpio.event.{GpioPinDigitalStateChangeEvent, GpioPinListenerDigital}
 import com.pi4j.io.gpio.{GpioController, GpioPinDigitalInput, Pin, PinPullResistance}
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
+
 
 
 object PinWatcher {
@@ -24,7 +26,7 @@ class PinWatcher(controller:GpioController, pin:Pin, notify:ActorRef) extends Ac
   protected val input:GpioPinDigitalInput = controller.provisionDigitalInputPin(pin, PinPullResistance.PULL_DOWN)
 
   // Once a minute, poll the actual pin state.  I've seen some glitches and this should reset them.
-  this.context.system.scheduler.schedule(1 minute, 1 minute, self, Poll)
+  context.system.scheduler.schedule(1 minute, 1 minute, self, Poll)
 
   override def receive: Receive = {
     case Watch => input.addListener(this); notify ! PinWatcher.PinNotify(input.getState.isHigh, self)

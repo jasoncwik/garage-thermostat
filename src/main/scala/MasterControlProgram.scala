@@ -18,6 +18,9 @@ import scala.concurrent.ExecutionContext.Implicits.global
 object MasterControlProgram {
   def props():Props = Props(new MasterControlProgram())
 
+  // Keep the backlight on for 5 minutes at a time so it doesn't blink a bunch and get distracting.
+  val BACKLIGHT_TIMEOUT = 300
+
   case object Update
   case object UpdateDisplay
 }
@@ -96,6 +99,9 @@ class MasterControlProgram extends Actor {
   // Time we reached setpoint
   var setpointTime = 0L
 
+  // Display backlight timeout
+  var backlightTimer = 0
+
   // Ping ourselves every second to evaluate heating logic
   context.system.scheduler.schedule(5 seconds, 1 second, self, Update)
 
@@ -113,6 +119,13 @@ class MasterControlProgram extends Actor {
   )
 
   def doUpdate():Unit = {
+    // Backlight timer
+    if(backlightTimer > 0) {
+      backlightTimer -= 1
+      if(backlightTimer == 0) {
+        lcdDisplay ! I2cSerialDisplay.BacklightOff
+      }
+    }
     // Evaluate heat call
     if(heating) {
       // turn off?
@@ -156,7 +169,13 @@ class MasterControlProgram extends Actor {
     case Bmp180.Sample(_, temperature, _) => currentTemp = temperature
     case Update => doUpdate()
     case UpdateDisplay => updateDisplay()
-    case MotionDetector.MotionDetected(state, _) => motionDetect = state
+    case MotionDetector.ContinuousMotion(state, _) => motionDetect = state
+    case MotionDetector.MotionDetected => {
+      if(backlightTimer == 0) {
+        lcdDisplay ! I2cSerialDisplay.BacklightOn
+      }
+      backlightTimer = MasterControlProgram.BACKLIGHT_TIMEOUT
+    }
     case _      => log.info("received unknown message")
   }
 
